@@ -1,7 +1,11 @@
 """Coordinate query understanding, endpoint selection, and KMS retrieval."""
 
-from .kms_client import KMSClient
+import logging
+
+from .kms_client import KMSClient, KMSClientError
 from .query_analyzer import analyze_query
+
+logger = logging.getLogger(__name__)
 
 
 class SearchOrchestrator:
@@ -23,7 +27,19 @@ class SearchOrchestrator:
             model_override=model,
         )
         params = self._build_search_params(query, analysis, filters or {})
-        retrieval = self.kms_client.search(params)
+        try:
+            retrieval = self.kms_client.search(params)
+        except KMSClientError as exc:
+            # Keep the query analysis. Demo records must never stand in for real sources.
+            logger.error("KMS search failed: %s", exc)
+            retrieval = {
+                "is_mock": False,
+                "unavailable": True,
+                "message": "The legal database could not be reached, so no records could be loaded. Please try again shortly.",
+                "endpoint": self.kms_client.endpoint_path,
+                "params": params,
+                "results": [],
+            }
         return {
             "original_query": query,
             "query_analysis": analysis,

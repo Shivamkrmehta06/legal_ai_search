@@ -6,9 +6,9 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .serializers import SearchRequestSerializer
+from .services.ai_wrapper import PROVIDERS
 from .services.kms_client import KMSClient, KMSClientError
-from .services.model_catalog import ModelCatalogError, list_gemini_models, list_openrouter_models
-from .services.query_analyzer import QueryAnalysisError
+from .services.model_catalog import ModelCatalogError, list_models, list_providers
 from .services.search_orchestrator import SearchOrchestrator
 
 
@@ -21,21 +21,16 @@ def search_query(request):
     serializer = SearchRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    try:
-        result = SearchOrchestrator().search(
-            serializer.validated_data["query"],
-            provider=serializer.validated_data.get("provider"),
-            model=serializer.validated_data.get("model"),
-            filters={
-                key: value
-                for key, value in serializer.validated_data.items()
-                if key in {"language", "limit", "is_official", "version_type", "case", "document", "legal_document"}
-            },
-        )
-    except QueryAnalysisError as exc:
-        return Response({"success": False, "detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
-    except KMSClientError as exc:
-        return Response({"success": False, "detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+    result = SearchOrchestrator().search(
+        serializer.validated_data["query"],
+        provider=serializer.validated_data.get("provider"),
+        model=serializer.validated_data.get("model"),
+        filters={
+            key: value
+            for key, value in serializer.validated_data.items()
+            if key in {"language", "limit", "is_official", "version_type", "case", "document", "legal_document"}
+        },
+    )
 
     return Response({"success": True, **result}, status=status.HTTP_200_OK)
 
@@ -51,19 +46,22 @@ def domains(request):
 
 
 @api_view(["GET"])
+def providers(request):
+    """List the AI providers and whether each has an API key."""
+    return Response({"success": True, "providers": list_providers()})
+
+
+@api_view(["GET"])
 def free_models(request):
-    """List the selected provider's models and their legal-search compatibility."""
+    """List the selected provider's chat models."""
     provider = request.query_params.get("provider", "gemini")
-    if provider not in {"gemini", "openrouter"}:
+    if provider not in PROVIDERS:
         return Response(
-            {"success": False, "detail": "provider must be gemini or openrouter."},
+            {"success": False, "detail": f"provider must be one of: {', '.join(PROVIDERS)}."},
             status=status.HTTP_400_BAD_REQUEST,
         )
     try:
-        if provider == "gemini":
-            models = list_gemini_models()
-        else:
-            models = list_openrouter_models()
+        models = list_models(provider)
     except ModelCatalogError as exc:
         return Response({"success": False, "detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 

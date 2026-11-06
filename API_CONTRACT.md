@@ -19,8 +19,8 @@ Optionally, frontend may select a provider and model:
 ```json
 {
   "query": "Supreme Court decisions about cheque bounce",
-  "provider": "openrouter",
-  "model": "provider/model-id"
+  "provider": "groq",
+  "model": "model-id"
 }
 ```
 
@@ -31,19 +31,22 @@ passed through only when supplied: `language` (sent as `lang`), `limit`
 integrations can additionally send a KMS UUID for `case`, `document`, or
 `legal_document`.
 
-For OpenRouter, select a model marked `is_legal_search_compatible: true`.
+`provider` is one of `gemini`, `groq`, `cerebras`, `mistral`, `cohere`, `deepseek`,
+`xai`, `openai`, or `anthropic`.
 
-## Free-model catalogue
+## Provider and model catalogue
 
-`GET /api/models/?provider=gemini` reads the account's current Gemini model
-catalogue. Only models with `is_legal_search_compatible: true` have been
-verified for this backend's structured legal-query JSON request; the frontend
-should disable the others rather than presenting unsupported audio/image/research
-models as legal-query choices.
+`GET /api/providers/` lists the providers and whether each has an API key.
+`AI_DISABLED_PROVIDERS` makes a provider count as having none, so it is hidden and
+skipped until it is removed from that setting.
 
-`GET /api/models/?provider=openrouter` returns OpenRouter's live model catalogue
-with JSON structured-output compatibility and pricing metadata. Set
-`OPENROUTER_API_KEY` to enable it.
+`GET /api/models/?provider=<provider>` reads that provider's live catalogue and
+returns the models suited to query analysis, leaving out music, image, embedding,
+and research models. When a provider has a tested list, only those models are
+returned. Gemini has one built in, and `<NAME>_AVAILABLE_MODELS` overrides it for
+any provider. `python manage.py check_models` tests the models with one real request
+each and prints that setting. A model that later fails passes the request to the next
+model in the chain.
 
 ### Success response
 
@@ -78,14 +81,17 @@ configuration-driven domain selector can be built without hard-coding domains.
 
 - `retrieval.is_mock: true`: KMS is not configured. `results` is always empty;
   no legal data has been retrieved.
-- `query_analysis_provider: gemini` or `openrouter:<model>`: an LLM
-  parsed the query.
-- `query_analysis_provider: heuristic_fallback`: no configured LLM was used or
-  the configured model was temporarily unavailable (for example a Gemini 503).
+- `query_analysis_provider: <provider>:<model>`, such as
+  `gemini:gemini-flash-lite-latest`: an LLM parsed the query. This names the model that actually answered, which may be a
+  backup rather than the one selected in the request.
+- `query_analysis_provider: heuristic_fallback`: no LLM is configured or every
+  model in the chain was unavailable (for example a Gemini 503).
   Display results normally, but
   do not represent the extracted filters as AI-verified.
 - HTTP `400`: invalid request body.
-- HTTP `502`: a configured LLM or KMS service could not be reached.
+- `retrieval.unavailable: true`: the KMS service could not be reached. The query
+  analysis is still returned, `results` is empty, and `retrieval.message` explains
+  why. Demo records are never used in place of a failed KMS search.
 
 ## Backend configuration
 
@@ -102,8 +108,19 @@ specification. Domain, statute, court, and date are not `/search/` query
 parameters in that specification; the application retains their AI-derived
 context but does not falsely present them as server-side search filters.
 
-### OpenRouter cloud provider
+### Model chain
 
-Set `OPENROUTER_API_KEY` and choose a compatible model returned by
-`GET /api/models/?provider=openrouter`. OpenRouter model access and costs depend
-on the selected upstream model/provider.
+Query analysis tries models in order and moves to the next when one errors, times
+out, or returns invalid JSON. A model selected in the request is tried first, with
+the chain as its backup. Set the order with `AI_MODEL_CHAIN`, for example
+`gemini:gemini-flash-lite-latest,groq:model-id`. Providers without an API key are
+skipped, and `AI_TOTAL_TIMEOUT_SECONDS` limits the time spent across all models.
+
+### Backup API keys
+
+Each provider reads `<NAME>_API_KEY` and an optional comma-separated
+`<NAME>_API_KEYS`, for example `GROQ_API_KEYS`. When a key returns 401, 402, 403, or
+429, or a 400 about the key or its credit, the same model is retried with the next
+key. The server log names the provider and the key's position, never the key. Keys
+are not created automatically: a person creates them, and backups only help when
+each has its own usage limit.

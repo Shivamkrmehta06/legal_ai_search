@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from .services.ai_wrapper import PROVIDERS
+
 
 class SearchRequestSerializer(serializers.Serializer):
     """Validate the public search request."""
@@ -11,7 +13,7 @@ class SearchRequestSerializer(serializers.Serializer):
         max_length=2_000,
     )
     provider = serializers.ChoiceField(
-        choices=("gemini", "openrouter"),
+        choices=tuple(PROVIDERS),
         required=False,
     )
     model = serializers.CharField(required=False, allow_blank=False, max_length=200)
