@@ -10,7 +10,10 @@ from openai import OpenAI
 from pydantic import BaseModel
 import requests
 
+from key_management.services import environment_keys, stored_api_keys
+
 from . import anthropic_provider
+from .api_logging import log_api_call
 
 logger = logging.getLogger(__name__)
 
@@ -74,19 +77,15 @@ class ModelTarget:
 
 
 def api_keys(provider: str) -> list[str]:
-    """Return a provider's keys: <NAME>_API_KEY, then those in <NAME>_API_KEYS.
+    """Return a provider's keys from the key master table, else environment variables.
 
     AI_DISABLED_PROVIDERS switches a provider off, for example while it has no credit.
     """
     disabled = {name.strip().lower() for name in os.getenv("AI_DISABLED_PROVIDERS", "").split(",")}
     if provider in disabled:
         return []
-    prefix = provider.upper()
-    candidates = [os.getenv(f"{prefix}_API_KEY", "")]
-    if provider == "gemini":
-        candidates.append(os.getenv("GOOGLE_API_KEY", ""))
-    candidates += os.getenv(f"{prefix}_API_KEYS", "").split(",")
-    return list(dict.fromkeys(key.strip() for key in candidates if key.strip()))
+    stored = stored_api_keys(provider)
+    return environment_keys(provider) if stored is None else stored
 
 
 def build_model_chain(provider: str | None = None, model: str | None = None) -> list[ModelTarget]:
@@ -121,9 +120,21 @@ def complete_structured(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise AIWrapperError("The AI model chain ran out of time.")
+            name = f"AI {target.label} (key #{position})"
+            started = time.monotonic()
             try:
-                return _call(target, key, system, prompt, response_model, gemini_schema, remaining), target
+                result = _call(target, key, system, prompt, response_model, gemini_schema, remaining)
+                log_api_call(name, {"prompt": prompt}, result.model_dump(), seconds=time.monotonic() - started, secrets=[key])
+                return result, target
             except Exception as exc:
+                log_api_call(
+                    name,
+                    {"prompt": prompt},
+                    status=getattr(exc, "status_code", None),
+                    seconds=time.monotonic() - started,
+                    error=exc,
+                    secrets=[key],
+                )
                 # One failing model must not stop the others from being tried.
                 if _is_key_problem(exc):
                     # Logs name the key's position only, so someone can replace it safely.

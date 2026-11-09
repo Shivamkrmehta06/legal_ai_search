@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 class LegalQuery(BaseModel):
     intent: str
     is_legal_query: bool
+    request_type: str = "judgment_search"
+    case_name: Optional[str] = None
+    requested_info: list[str] = []
     domain: Optional[str] = None
     court: Optional[str] = None
     act: Optional[str] = None
@@ -31,7 +34,29 @@ facts, cases, statutes, courts, or sections.
 Return the requested structured fields. Use null for unknown scalar fields and
 empty lists for unknown legal_issues or keywords. Choose intent from
 case_search, document_search, statute_search, or general_search. Set
-is_legal_query to false when appropriate. Return language as a lowercase ISO 639-1
+is_legal_query to false when appropriate.
+
+This service finds previous judgments related to Acts and sections. Set request_type:
+- judgment_search: the user wants judgments, in any words or language, such as
+  orders, rulings, decisions, precedents, case law, faisla, or just an Act or section.
+- legal_question: a legal question asking for advice or an explanation rather than judgments.
+- out_of_scope: nothing to do with law.
+
+Set case_name only when the user names a specific case, such as "ABC Traders v XYZ".
+Set requested_info to what the user wants to know, from: judges, parties, summary, court,
+judgment_date, case_number, citation, outcome, bench, statutes (Acts and sections in
+the case), issues, domains, propositions (holdings and reasoning), cases_cited, cited_by,
+citation_aliases, legal_documents, case_documents, versions, metadata_versions, passages.
+List only what the user explicitly asked for, and leave it empty when the user only wants
+a list of judgments.
+
+Set act to the Act's full official English name, however the user writes it: in any
+language or script, abbreviated or misspelt. For example "NI Act", "एनआई एक्ट", "قانون ني"
+and "این آئی ایکٹ" all mean "Negotiable Instruments Act, 1881". Set section to the section
+number alone, in Western digits. Never put the section in act: "NI Act 138" means act
+"Negotiable Instruments Act, 1881" and section "138".
+
+Return language as a lowercase ISO 639-1
 code such as en or hi. Ask one clarifying question only when the query is too
 ambiguous to search usefully.
 """
@@ -44,6 +69,12 @@ GEMINI_SCHEMA = {
             "enum": ["case_search", "document_search", "statute_search", "general_search"],
         },
         "is_legal_query": {"type": "BOOLEAN"},
+        "request_type": {
+            "type": "STRING",
+            "enum": ["judgment_search", "legal_question", "out_of_scope"],
+        },
+        "case_name": {"type": "STRING", "nullable": True},
+        "requested_info": {"type": "ARRAY", "items": {"type": "STRING"}},
         "domain": {"type": "STRING", "nullable": True},
         "court": {"type": "STRING", "nullable": True},
         "act": {"type": "STRING", "nullable": True},
@@ -53,7 +84,7 @@ GEMINI_SCHEMA = {
         "language": {"type": "STRING"},
         "clarifying_question": {"type": "STRING", "nullable": True},
     },
-    "required": ["intent", "is_legal_query", "language"],
+    "required": ["intent", "is_legal_query", "request_type", "language"],
 }
 
 
@@ -85,7 +116,10 @@ def _fallback_analysis(query: str) -> LegalQuery:
     # Whole words only, so that "contract" doesn't count as "act".
     words = set(re.findall(r"[a-z]+", query.lower()))
     intent = "general_search"
-    if words & {"case", "cases", "judgment", "judgments", "judgement", "judgements", "ruling", "rulings"}:
+    if words & {
+        "case", "cases", "judgment", "judgments", "judgement", "judgements", "ruling", "rulings",
+        "order", "orders", "decision", "decisions", "precedent", "precedents", "faisla", "faisle",
+    }:
         intent = "case_search"
     elif words & {"act", "acts", "section", "sections", "statute", "statutes"}:
         intent = "statute_search"

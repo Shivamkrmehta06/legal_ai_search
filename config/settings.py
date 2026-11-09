@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -27,6 +28,7 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
+
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -50,7 +52,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "whitenoise.runserver_nostatic",
     "rest_framework",
-    "search"
+    "search",
+    "key_management",
 ]
 
 MIDDLEWARE = [
@@ -140,6 +143,25 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Show API requests and responses in the terminal. Off by default on the live site,
+# since its logs would otherwise keep every user's question.
+API_LOG_ENABLED = os.getenv("API_LOG", "true" if DEBUG else "false").strip().lower() in {"1", "true", "yes", "on"}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "%(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    "loggers": {
+        "api_calls": {
+            "handlers": ["console"],
+            "level": "INFO" if API_LOG_ENABLED and "test" not in sys.argv else "WARNING",
+            "propagate": False,
+        },
+    },
+}
 
 
 # Email

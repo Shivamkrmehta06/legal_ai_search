@@ -24,20 +24,11 @@
           <div class="field model-field"><label for="model">Model</label><select id="model"><option value="">Use configured default</option></select></div>
           <button id="submit" type="submit"><span>Search legal sources</span><b>→</b></button>
         </div>
-        <details class="filters">
-          <summary>Search filters</summary>
-          <div class="filter-grid">
-            <div class="field"><label for="language">Language</label><input id="language" name="language" maxlength="20" placeholder="e.g. en or hi"></div>
-            <div class="field"><label for="version-type">Document version</label><select id="version-type" name="version_type"><option value="">Any version</option><option value="ORIGINAL">Original</option><option value="OFFICIAL_TRANSLATION">Official translation</option><option value="HUMAN_TRANSLATION">Human translation</option><option value="AI_TRANSLATION">AI translation</option></select></div>
-            <div class="field"><label for="official">Source status</label><select id="official" name="is_official"><option value="">Official and other sources</option><option value="true">Official only</option><option value="false">Non-official only</option></select></div>
-            <div class="field"><label for="limit">Result limit</label><input id="limit" name="limit" type="number" min="1" max="100" value="20"></div>
-          </div>
-        </details>
         <p id="model-note" class="hint">Model choices load from the configured provider.</p>
       </form>
       <div id="message" class="message" hidden></div>
       <section id="analysis" class="panel" hidden><div class="panel-head"><div><p class="eyebrow">QUERY UNDERSTANDING</p><h2>Search strategy</h2></div><span id="provider-badge" class="badge"></span></div><div id="analysis-content" class="chips"></div></section>
-      <section id="results" class="panel" hidden><div class="panel-head"><div><p class="eyebrow">KNOWLEDGE BASE</p><h2>Search results</h2></div><span id="result-count" class="badge"></span></div><div id="result-list"></div></section>
+      <section id="results" class="panel" hidden><div class="panel-head"><div><p class="eyebrow">KNOWLEDGE BASE</p><h2 id="results-title">Search results</h2></div><span id="result-count" class="badge"></span></div><div id="result-list"></div></section>
       <footer>Research support only. Verify legal authorities against the original source.</footer>
     </section>
   </main>

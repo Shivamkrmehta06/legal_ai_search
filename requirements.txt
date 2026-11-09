@@ -7,3 +7,4 @@ pydantic==2.14.2
 gunicorn==25.1.0
 whitenoise==6.9.0
 anthropic==1.17.0
+cryptography==50.0.2

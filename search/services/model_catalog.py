@@ -1,10 +1,12 @@
 """Discover the chat models each configured AI provider currently offers."""
 
 import os
+import time
 
 import requests
 
 from . import anthropic_provider
+from .api_logging import log_api_call
 from .ai_wrapper import PROVIDERS, api_keys, openai_client
 
 # Catalogues also contain models unsuited to analysing a legal search query.
@@ -51,10 +53,14 @@ def list_models(provider: str, only_tested: bool = True) -> list[dict]:
         raise ModelCatalogError(f"{PROVIDERS[provider].label} is not configured.")
 
     for key in keys:
+        name = f"AI model list {provider}"
+        started = time.monotonic()
         try:
             models = _fetch_models(provider, key)
-        except Exception:
+        except Exception as exc:
+            log_api_call(name, {"provider": provider}, seconds=time.monotonic() - started, error=exc, secrets=[key])
             continue
+        log_api_call(name, {"provider": provider}, [model["id"] for model in models], seconds=time.monotonic() - started)
         tested = _tested_models(provider) if only_tested else None
         usable = [
             model for model in models

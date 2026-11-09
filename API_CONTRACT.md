@@ -71,8 +71,47 @@ model in the chain.
 }
 ```
 
-`results` is the frontend-friendly top-level list. `retrieval` retains the KMS
-endpoint, request parameters, and source metadata for debugging.
+`judgments` is the answer: `id` and `title` for each matching case. If the question
+asked for specific information, each judgment also holds `requested` and only those
+fields, for up to 10 cases. `response_message` and `results_title` are text for the user, and
+`retrieval.api_calls` lists exactly which KMS APIs were called.
+
+`GET /api/judgments/<case id>/` returns everything KMS holds on one judgment. The page
+calls it when a user clicks More.
+
+### API selection rules
+
+The AI model only reports what was asked. Fixed rules then choose the APIs, in this order:
+
+1. `request_type` is `out_of_scope`: no API is called.
+2. `case_name` is present: `/api/v1/legal-cases/` finds the case.
+3. An Act or section is present: `/api/v1/statutes/`, `/api/v1/statutory-provisions/`, and
+   `/api/v1/case-statute-links/` find its cases. A section is only used if the user typed it,
+   in any script, and is taken out of the Act's name if a model put it there. Results are
+   named after the Act KMS found. If the named Act isn't in KMS, the section is still searched
+   and `response_message` says the Act could not be matched.
+4. Information was asked for with no case, Act, court or issue: no API is called, and the
+   user is asked to name the case.
+5. Otherwise: `/api/v1/legal-cases/` is searched by topic, then by the user's own words.
+
+`requested_info` then adds only its own API:
+
+| Asked for | KMS API |
+| --- | --- |
+| `summary`, `court`, `judgment_date`, `case_number`, `citation`, `outcome`, `bench` | `/api/v1/legal-cases/{id}/` |
+| `judges` | `/api/v1/case-judges/` |
+| `parties` | `/api/v1/case-parties/` |
+| `statutes` | `/api/v1/case-statute-links/` |
+| `issues` | `/api/v1/case-issue-links/` |
+| `domains` | `/api/v1/case-domain-links/` |
+| `propositions` | `/api/v1/legal-propositions/` |
+| `cases_cited`, `cited_by` | `/api/v1/case-citations/` |
+| `citation_aliases` | `/api/v1/citation-aliases/` |
+| `legal_documents` | `/api/v1/legal-documents/` |
+| `case_documents` | `/api/v1/case-documents/` |
+| `versions` | `/api/v1/case-versions/` |
+| `metadata_versions` | `/api/v1/case-metadata-versions/` |
+| `passages` | `/api/v1/legal-documents/`, then `/api/v1/case-paragraphs/` |
 
 `GET /api/domains/` proxies KMS's `/api/v1/legal-domains/` registry so a
 configuration-driven domain selector can be built without hard-coding domains.
@@ -89,7 +128,8 @@ configuration-driven domain selector can be built without hard-coding domains.
   Display results normally, but
   do not represent the extracted filters as AI-verified.
 - HTTP `400`: invalid request body.
-- `retrieval.unavailable: true`: the KMS service could not be reached. The query
+- `unavailable_sections` on a judgment: those details could not be loaded.
+- `retrieval.unavailable: true`: the KMS search failed. The query
   analysis is still returned, `results` is empty, and `retrieval.message` explains
   why. Demo records are never used in place of a failed KMS search.
 

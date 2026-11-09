@@ -1,16 +1,17 @@
 """Coordinate query understanding, endpoint selection, and KMS retrieval."""
 
-import logging
-
-from .kms_client import KMSClient, KMSClientError
+from .kms_client import KMSClient
+from .kms_router import answer_query
 from .query_analyzer import analyze_query
 
-logger = logging.getLogger(__name__)
+
+OUT_OF_SCOPE_MESSAGE = (
+    "We help you find judgments related to any Act or section, so we can't answer this question. "
+    "Try asking, for example: judgments on Section 138 of the NI Act."
+)
 
 
 class SearchOrchestrator:
-    """The endpoint router remains narrow until more KMS endpoints exist."""
-
     def __init__(self, kms_client: KMSClient | None = None):
         self.kms_client = kms_client or KMSClient()
 
@@ -27,23 +28,24 @@ class SearchOrchestrator:
             model_override=model,
         )
         params = self._build_search_params(query, analysis, filters or {})
-        try:
+        answer = {"judgments": [], "judgment_count": 0, "requested_info": [], "response_message": None, "results_title": None}
+        if analysis.get("request_type") == "out_of_scope" or not analysis.get("is_legal_query", True):
+            # Searching for an unrelated question could only return misleading records.
+            answer["response_message"] = OUT_OF_SCOPE_MESSAGE
+            retrieval = {"is_mock": False, "skipped": True, "message": None, "api_calls": [], "results": []}
+        elif self.kms_client.is_configured():
+            # A failed KMS keeps the query analysis: demo records never stand in for real sources.
+            answered = answer_query(self.kms_client, query, analysis)
+            retrieval = answered.pop("retrieval")
+            analysis = {**analysis, **answered.pop("understood_law")}
+            answer = answered
+        else:
             retrieval = self.kms_client.search(params)
-        except KMSClientError as exc:
-            # Keep the query analysis. Demo records must never stand in for real sources.
-            logger.error("KMS search failed: %s", exc)
-            retrieval = {
-                "is_mock": False,
-                "unavailable": True,
-                "message": "The legal database could not be reached, so no records could be loaded. Please try again shortly.",
-                "endpoint": self.kms_client.endpoint_path,
-                "params": params,
-                "results": [],
-            }
         return {
             "original_query": query,
             "query_analysis": analysis,
             "query_analysis_provider": analysis_provider,
+            **answer,
             "retrieval": retrieval,
             "results": retrieval["results"],
         }

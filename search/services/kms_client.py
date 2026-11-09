@@ -1,9 +1,12 @@
 """Small client for the documented KMS legal search endpoint."""
 
 import os
+import time
 from typing import Any
 
 import requests
+
+from .api_logging import log_api_call
 
 
 class LocalDemoSearch:
@@ -83,6 +86,13 @@ class KMSClientError(Exception):
 class KMSClient:
     endpoint_path = "/api/v1/search/"
 
+    @staticmethod
+    def is_configured() -> bool:
+        return bool(os.getenv("KMS_API_BASE_URL") and os.getenv("KMS_API_TOKEN"))
+
+    def get(self, endpoint_path: str, params: dict[str, Any]) -> Any:
+        return self._request(endpoint_path, params)
+
     def list_domains(self) -> dict[str, Any]:
         """Return configured legal domains from the KMS API when available."""
         return self._get_collection("/api/v1/legal-domains/")
@@ -132,6 +142,9 @@ class KMSClient:
     def _request(self, endpoint_path: str, params: dict[str, Any]) -> Any:
         base_url = os.getenv("KMS_API_BASE_URL")
         token = os.getenv("KMS_API_TOKEN")
+        name = f"KMS GET {endpoint_path}"
+        started = time.monotonic()
+        status = None
         try:
             response = requests.get(
                 f"{base_url.rstrip('/')}{endpoint_path}",
@@ -139,10 +152,14 @@ class KMSClient:
                 params=params,
                 timeout=float(os.getenv("KMS_API_TIMEOUT_SECONDS", "10")),
             )
+            status = response.status_code
             response.raise_for_status()
-            return response.json()
+            payload = response.json()
         except (requests.RequestException, ValueError) as exc:
+            log_api_call(name, params, status=status, seconds=time.monotonic() - started, error=exc, secrets=[token])
             raise KMSClientError("The KMS Legal Knowledge API request failed.") from exc
+        log_api_call(name, params, payload, status=status, seconds=time.monotonic() - started, secrets=[token])
+        return payload
 
     @staticmethod
     def _extract_results(payload: Any) -> list[Any]:
